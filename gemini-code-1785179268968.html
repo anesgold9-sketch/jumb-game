@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>لعبة صب واي - المسارات الثلاثة</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+    body {
+      background: #0b0f19;
+      color: #fff;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+
+    .game-wrapper {
+      position: relative;
+      width: 500px;
+      height: 600px;
+      border-radius: 20px;
+      overflow: hidden;
+      box-shadow: 0 0 35px rgba(56, 189, 248, 0.35);
+      border: 3px solid #38bdf8;
+      background: #000;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* شاشة البداية بزر الدخول */
+    .start-screen {
+      position: absolute;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.92);
+      backdrop-filter: blur(8px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 20;
+      gap: 20px;
+    }
+
+    .start-screen h2 {
+      font-size: 32px;
+      color: #38bdf8;
+      text-shadow: 0 0 15px rgba(56, 189, 248, 0.5);
+    }
+
+    .play-btn {
+      background: linear-gradient(135deg, #38bdf8, #0284c7);
+      color: #ffffff;
+      border: none;
+      padding: 16px 42px;
+      font-size: 22px;
+      font-weight: 800;
+      border-radius: 50px;
+      cursor: pointer;
+      box-shadow: 0 8px 20px rgba(56, 189, 248, 0.4);
+      transition: all 0.2s ease;
+    }
+
+    .play-btn:hover {
+      transform: scale(1.08);
+      box-shadow: 0 12px 25px rgba(56, 189, 248, 0.6);
+    }
+
+    .play-btn:active {
+      transform: scale(0.96);
+    }
+
+    /* واجهة النتيجة العلوية (HUD) */
+    .hud {
+      position: absolute;
+      top: 15px;
+      left: 20px;
+      right: 20px;
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    .hud-card {
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      padding: 8px 16px;
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+    }
+
+    .hud-title {
+      font-size: 11px;
+      color: #94a3b8;
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+
+    .hud-value {
+      font-size: 18px;
+      font-weight: 800;
+      color: #38bdf8;
+    }
+
+    .hud-value.coins {
+      color: #facc15;
+    }
+
+    .controls-hint {
+      margin-top: 12px;
+      font-size: 14px;
+      color: #94a3b8;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="game-wrapper">
+    <!-- شاشة زر الدخول للعب -->
+    <div class="start-screen" id="startScreen">
+      <h2>🏃‍♂️ لعبة صب واي</h2>
+      <button class="play-btn" id="startBtn">دخول للعبة 🎮</button>
+    </div>
+
+    <!-- واجهة النقاط -->
+    <div class="hud">
+      <div class="hud-card">
+        <span class="hud-title">النقاط</span>
+        <span class="hud-value" id="scoreVal">0</span>
+      </div>
+      <div class="hud-card">
+        <span class="hud-title">العملات</span>
+        <span class="hud-value coins" id="coinsVal">🪙 0</span>
+      </div>
+      <div class="hud-card">
+        <span class="hud-title">أعلى رقم</span>
+        <span class="hud-value" id="highScoreVal">0</span>
+      </div>
+    </div>
+
+    <canvas id="gameCanvas" width="500" height="600"></canvas>
+  </div>
+
+  <p class="controls-hint">التحكم: أسهم <b>← →</b> للتنقل | سهم <b>↑</b> أو <b>Space</b> للقفز | سهم <b>↓</b> للهبوط</p>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    const scoreEl = document.getElementById('scoreVal');
+    const coinsEl = document.getElementById('coinsVal');
+    const highScoreEl = document.getElementById('highScoreVal');
+    const startScreen = document.getElementById('startScreen');
+    const startBtn = document.getElementById('startBtn');
+
+    let gameSpeed = 0.015;
+    let score = 0;
+    let coinsCollected = 0;
+    let highScore = localStorage.getItem('subway_3lane_hs') || 0;
+    let gameOver = false;
+    let gameStarted = false;
+    let frameCount = 0;
+
+    highScoreEl.innerText = highScore;
+
+    const horizonY = 180;
+    const laneXsHorizon = [225, 250, 275];
+    const laneXsBottom = [70, 250, 430];
+
+    const player = {
+      targetLane: 1,
+      currentX: 250,
+      yOffset: 0,
+      dy: 0,
+      gravity: 0.8,
+      jumpForce: -14,
+      isGrounded: true,
+
+      update() {
+        const targetX = laneXsBottom[this.targetLane];
+        this.currentX += (targetX - this.currentX) * 0.25;
+
+        this.dy += this.gravity;
+        this.yOffset += this.dy;
+
+        if (this.yOffset >= 0) {
+          this.yOffset = 0;
+          this.dy = 0;
+          this.isGrounded = true;
+        }
+      },
+
+      jump() {
+        if (this.isGrounded) {
+          this.dy = this.jumpForce;
+          this.isGrounded = false;
+        }
+      },
+
+      moveLeft() {
+        if (this.targetLane > 0) this.targetLane--;
+      },
+
+      moveRight() {
+        if (this.targetLane < 2) this.targetLane++;
+      },
+
+      draw() {
+        const playerY = 510 + this.yOffset;
+        const playerSize = 50;
+
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        ctx.beginPath();
+        ctx.ellipse(this.currentX, 525, 20, 8, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#38bdf8';
+        ctx.beginPath();
+        ctx.roundRect(this.currentX - playerSize/2, playerY - playerSize, playerSize, playerSize, 12);
+        ctx.fill();
+
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(this.currentX - 15, playerY - playerSize + 12, 30, 10);
+        ctx.fillStyle = '#f8fafc';
+        ctx.fillRect(this.currentX + 2, playerY - playerSize + 14, 8, 6);
+      }
+    };
+
+    let obstacles = [];
+    let coins = [];
+
+    class Obstacle {
+      constructor() {
+        this.lane = Math.floor(Math.random() * 3);
+        this.z = 0;
+      }
+      update() {
+        this.z += gameSpeed;
+      }
+      draw() {
+        const xHorizon = laneXsHorizon[this.lane];
+        const xBottom = laneXsBottom[this.lane];
+
+        const x = xHorizon + (xBottom - xHorizon) * this.z;
+        const y = horizonY + (520 - horizonY) * this.z;
+        const size = 15 + 45 * this.z;
+
+        ctx.fillStyle = '#ef4444';
+        ctx.beginPath();
+        ctx.roundRect(x - size/2, y - size, size, size, 6 * this.z);
+        ctx.fill();
+
+        ctx.fillStyle = '#991b1b';
+        ctx.fillRect(x - size/2 + 2, y - size + 2, size - 4, size / 3);
+      }
+    }
+
+    class Coin {
+      constructor() {
+        this.lane = Math.floor(Math.random() * 3);
+        this.z = 0;
+        this.collected = false;
+      }
+      update() {
+        this.z += gameSpeed;
+      }
+      draw() {
+        if (this.collected) return;
+
+        const xHorizon = laneXsHorizon[this.lane];
+        const xBottom = laneXsBottom[this.lane];
+
+        const x = xHorizon + (xBottom - xHorizon) * this.z;
+        const y = horizonY + (500 - horizonY) * this.z;
+        const radius = 4 + 12 * this.z;
+
+        ctx.fillStyle = '#facc15';
+        ctx.beginPath();
+        ctx.arc(x, y - radius, radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#ca8a04';
+        ctx.lineWidth = 2 * this.z;
+        ctx.stroke();
+      }
+    }
+
+    // زر بدء اللعبة
+    startBtn.addEventListener('click', () => {
+      startScreen.style.display = 'none';
+      gameStarted = true;
+      restartGame();
+    });
+
+    window.addEventListener('keydown', (e) => {
+      if (!gameStarted) return;
+
+      if (gameOver) {
+        if (e.code === 'Space' || e.code === 'Enter') restartGame();
+        return;
+      }
+
+      if (e.code === 'ArrowLeft') player.moveLeft();
+      if (e.code === 'ArrowRight') player.moveRight();
+      if (e.code === 'ArrowUp' || e.code === 'Space') player.jump();
+      if (e.code === 'ArrowDown') player.dy += 8;
+    });
+
+    function spawnElements() {
+      if (frameCount % Math.max(35, Math.floor(70 - gameSpeed * 1000)) === 0) {
+        obstacles.push(new Obstacle());
+      }
+
+      if (frameCount % 45 === 0 && Math.random() > 0.3) {
+        coins.push(new Coin());
+      }
+    }
+
+    function checkCollisions() {
+      for (let obs of obstacles) {
+        if (obs.z > 0.85 && obs.z < 0.98 && obs.lane === player.targetLane) {
+          if (player.yOffset > -20) {
+            endGame();
+          }
+        }
+      }
+
+      for (let coin of coins) {
+        if (!coin.collected && coin.z > 0.82 && coin.z < 0.96 && coin.lane === player.targetLane) {
+          if (player.yOffset > -40) {
+            coin.collected = true;
+            coinsCollected++;
+            score += 50;
+            coinsEl.innerText = `🪙 ${coinsCollected}`;
+          }
+        }
+      }
+    }
+
+    function endGame() {
+      gameOver = true;
+      if (score > highScore) {
+        highScore = score;
+        localStorage.setItem('subway_3lane_hs', highScore);
+        highScoreEl.innerText = highScore;
+      }
+    }
+
+    function restartGame() {
+      gameSpeed = 0.015;
+      score = 0;
+      coinsCollected = 0;
+      obstacles = [];
+      coins = [];
+      frameCount = 0;
+      gameOver = false;
+      player.targetLane = 1;
+      player.currentX = 250;
+      player.yOffset = 0;
+      scoreEl.innerText = '0';
+      coinsEl.innerText = '🪙 0';
+      animate();
+    }
+
+    function drawTrack() {
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(0, 0, canvas.width, horizonY);
+
+      ctx.fillStyle = '#1e293b';
+      ctx.fillRect(0, horizonY, canvas.width, canvas.height - horizonY);
+
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 2;
+
+      for (let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        ctx.moveTo(laneXsHorizon[i], horizonY);
+        ctx.lineTo(laneXsBottom[i], 600);
+        ctx.stroke();
+      }
+
+      ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+      ctx.lineWidth = 3;
+      const speedOffset = (frameCount * gameSpeed * 400) % 40;
+      for (let y = horizonY + speedOffset; y < 600; y += 40) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+        ctx.stroke();
+      }
+    }
+
+    function drawGameOverScreen() {
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = 'bold 30px Tahoma, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('انتهت اللعبة! 💥', canvas.width / 2, canvas.height / 2 - 20);
+
+      ctx.font = '16px Tahoma, sans-serif';
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText('اضغط Space أو Enter لإعادة اللعب', canvas.width / 2, canvas.height / 2 + 30);
+      ctx.textAlign = 'start';
+    }
+
+    function animate() {
+      if (!gameStarted) return;
+
+      if (gameOver) {
+        drawGameOverScreen();
+        return;
+      }
+
+      frameCount++;
+      gameSpeed += 0.000008;
+      score += Math.floor(gameSpeed * 100);
+      scoreEl.innerText = score;
+
+      drawTrack();
+
+      spawnElements();
+
+      for (let i = coins.length - 1; i >= 0; i--) {
+        coins[i].update();
+        coins[i].draw();
+        if (coins[i].z > 1.2) coins.splice(i, 1);
+      }
+
+      for (let i = obstacles.length - 1; i >= 0; i--) {
+        obstacles[i].update();
+        obstacles[i].draw();
+        if (obstacles[i].z > 1.2) obstacles.splice(i, 1);
+      }
+
+      player.update();
+      player.draw();
+
+      checkCollisions();
+
+      requestAnimationFrame(animate);
+    }
+
+    // رسم الخلفية الأولية قبل بداية اللعب
+    drawTrack();
+  </script>
+</body>
+</html>
